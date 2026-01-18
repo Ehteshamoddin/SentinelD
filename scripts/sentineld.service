@@ -1,0 +1,14 @@
+[Unit]
+Description=Sentinel System Monitor Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sentineld --config /etc/sentineld/config.yaml
+Restart=on-failure
+User=root
+# StandardOutput/Error defaults to journal, which is perfect for systemd
+# If you want to use the app's internal file logging, that works too.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+{
+  "daemon": {
+    "pid_file": "/var/run/sentineld.pid",
+    "log_file": "/var/log/sentineld.log",
+    "log_level": "info"
+  },
+  "monitor": {
+    "interval_seconds": 5,
+    "cpu_threshold_percent": 90,
+    "memory_threshold_percent": 85
+  },
+  "watcher": {
+    "path": "/tmp/sentinel_watch",
+    "events": ["create", "modify", "delete"]
+  }
+}
