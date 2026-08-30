@@ -1,14 +1,57 @@
 [Unit]
 Description=Sentinel System Monitor Daemon
-After=network.target
+Documentation=https://github.com/Ehteshamoddin/sentineld
+After=local-fs.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/sentineld --config /etc/sentineld/config.yaml
+# Do NOT pass --daemon here: Type=simple expects the process to stay in the
+# foreground and lets systemd own the lifecycle, cgroup and logging.
+ExecStart=/usr/bin/sentineld --config /etc/sentineld/sentinel.json
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
-User=root
-# StandardOutput/Error defaults to journal, which is perfect for systemd
-# If you want to use the app's internal file logging, that works too.
+RestartSec=5s
+
+# /var/run is a tmpfs; this creates /run/sentineld on start and removes it on
+# stop, so the PID file always has a directory to live in.
+RuntimeDirectory=sentineld
+RuntimeDirectoryMode=0755
+
+# ProtectSystem=strict makes /var/log read-only; this carves out a writable
+# /var/log/sentineld owned by the service user.
+LogsDirectory=sentineld
+LogsDirectoryMode=0755
+
+# Sandboxing. The daemon only needs to read world-readable files under /proc
+# and the configured watch path, so it does not need to run as root.
+User=sentineld
+Group=sentineld
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+# Do not let the monitor destabilise the host it is monitoring.
+MemoryMax=128M
+CPUQuota=10%
+TasksMax=16
+OOMScoreAdjust=-100
+
+# stdout/stderr go to the journal: journalctl -u sentineld
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

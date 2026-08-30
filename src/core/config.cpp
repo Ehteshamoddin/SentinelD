@@ -1,6 +1,5 @@
 #include "sentinel/core/config.hpp"
 #include <fstream>
-#include <iostream>
 #include <spdlog/spdlog.h>
 
 namespace sentinel::core {
@@ -11,7 +10,7 @@ Config& Config::GetInstance() {
 }
 
 bool Config::Load(const std::string& path) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    ConfigData candidate;
     try {
         std::ifstream file(path);
         if (!file.is_open()) {
@@ -21,13 +20,26 @@ bool Config::Load(const std::string& path) {
 
         nlohmann::json j;
         file >> j;
-        data_ = j.get<ConfigData>();
-        spdlog::info("Configuration loaded successfully from {}", path);
-        return true;
+        candidate = j.get<ConfigData>();
     } catch (const std::exception& e) {
-        spdlog::error("Error parsing config file: {}", e.what());
+        spdlog::error("Error parsing config file {}: {}", path, e.what());
         return false;
     }
+
+    std::string error;
+    if (!Validate(candidate, error)) {
+        spdlog::error("Rejecting config from {}: {}", path, error);
+        return false;
+    }
+
+    // Only publish once the candidate is fully built and validated, so a
+    // failed load can never leave a half-applied configuration behind.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        data_ = std::move(candidate);
+    }
+    spdlog::info("Configuration loaded successfully from {}", path);
+    return true;
 }
 
 ConfigData Config::GetData() const {
@@ -35,30 +47,49 @@ ConfigData Config::GetData() const {
     return data_;
 }
 
-void from_json(const nlohmann::json& j, ConfigData::Daemon& d) {
-    j.at("pid_file").get_to(d.pid_file);
-    // Optional: use value() to provide default if missing, or at() to enforce
-    if (j.contains("log_file")) {
-        j.at("log_file").get_to(d.log_file);
+bool Validate(const ConfigData& c, std::string& error) {
+    if (c.monitor.interval_seconds <= 0) {
+        error = "monitor.interval_seconds must be greater than 0";
+        return false;
     }
-    j.at("log_level").get_to(d.log_level);
+    if (c.monitor.cpu_threshold_percent <= 0 || c.monitor.cpu_threshold_percent > 100) {
+        error = "monitor.cpu_threshold_percent must be in (0, 100]";
+        return false;
+    }
+    if (c.monitor.memory_threshold_percent <= 0 || c.monitor.memory_threshold_percent > 100) {
+        error = "monitor.memory_threshold_percent must be in (0, 100]";
+        return false;
+    }
+    if (c.daemon.pid_file.empty()) {
+        error = "daemon.pid_file must not be empty";
+        return false;
+    }
+    return true;
+}
+
+// Every field uses value() against the struct's own default, so a config that
+// omits a key is accepted rather than aborting the whole parse.
+void from_json(const nlohmann::json& j, ConfigData::Daemon& d) {
+    d.pid_file  = j.value("pid_file", d.pid_file);
+    d.log_file  = j.value("log_file", d.log_file);
+    d.log_level = j.value("log_level", d.log_level);
 }
 
 void from_json(const nlohmann::json& j, ConfigData::Monitor& m) {
-    j.at("interval_seconds").get_to(m.interval_seconds);
-    j.at("cpu_threshold_percent").get_to(m.cpu_threshold_percent);
-    j.at("memory_threshold_percent").get_to(m.memory_threshold_percent);
+    m.interval_seconds         = j.value("interval_seconds", m.interval_seconds);
+    m.cpu_threshold_percent    = j.value("cpu_threshold_percent", m.cpu_threshold_percent);
+    m.memory_threshold_percent = j.value("memory_threshold_percent", m.memory_threshold_percent);
 }
 
 void from_json(const nlohmann::json& j, ConfigData::Watcher& w) {
-    j.at("path").get_to(w.path);
-    j.at("events").get_to(w.events);
+    w.path   = j.value("path", w.path);
+    w.events = j.value("events", w.events);
 }
 
 void from_json(const nlohmann::json& j, ConfigData& c) {
-    j.at("daemon").get_to(c.daemon);
-    j.at("monitor").get_to(c.monitor);
-    j.at("watcher").get_to(c.watcher);
+    if (j.contains("daemon"))  j.at("daemon").get_to(c.daemon);
+    if (j.contains("monitor")) j.at("monitor").get_to(c.monitor);
+    if (j.contains("watcher")) j.at("watcher").get_to(c.watcher);
 }
 
 } // namespace sentinel::core

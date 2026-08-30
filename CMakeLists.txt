@@ -5,6 +5,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Ship with debug symbols by default so a production core dump is actually
+# analysable; a bare `cmake ..` previously produced an unoptimised, stripped build.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+endif()
+
+find_package(Threads REQUIRED)
+
 # Enable standard compiler warnings
 if(MSVC)
     add_compile_options(/W4 /WX)
@@ -39,9 +47,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(CLI11)
 
-# Include directories
-include_directories(include)
-
 # Main executable
 add_executable(sentineld 
     src/main.cpp
@@ -53,7 +58,13 @@ add_executable(sentineld
     src/features/file_watcher.cpp
 )
 
-target_link_libraries(sentineld PRIVATE spdlog::spdlog nlohmann_json::nlohmann_json CLI11::CLI11)
+target_include_directories(sentineld PRIVATE include)
+target_link_libraries(sentineld PRIVATE
+    spdlog::spdlog
+    nlohmann_json::nlohmann_json
+    CLI11::CLI11
+    Threads::Threads
+)
 target_compile_definitions(sentineld PRIVATE SENTINEL_VERSION="${PROJECT_VERSION}")
 
 # Installation
@@ -63,7 +74,7 @@ install(FILES scripts/sentineld.service DESTINATION /usr/lib/systemd/system)
 
 # CPack Configuration (RPM)
 set(CPACK_PACKAGE_NAME "sentineld")
-set(CPACK_PACKAGE_VENDOR "Sentinel Corp")
+set(CPACK_PACKAGE_VENDOR "Ehteshamoddin")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Linux System Monitor Daemon")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
@@ -71,7 +82,7 @@ set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
 set(CPACK_GENERATOR "RPM")
 set(CPACK_RPM_PACKAGE_LICENSE "MIT")
 set(CPACK_RPM_PACKAGE_GROUP "System/Monitoring")
-set(CPACK_RPM_PACKAGE_URL "https://github.com/yourusername/sentineld")
+set(CPACK_RPM_PACKAGE_URL "https://github.com/Ehteshamoddin/sentineld")
 
 # Prevent conflict with systemd package by not owning system directories
 set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION "/usr/lib/systemd" "/usr/lib/systemd/system" "/etc/sentineld")
@@ -79,7 +90,15 @@ set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION "/usr/lib/systemd" "/usr/lib/s
 # Disable build-id links to keep /usr/lib clean
 set(CPACK_RPM_SPEC_MORE_DEFINE "%define _build_id_links none")
 
-# Post-install script to reload systemd (optional but good)
-# set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/scripts/postinst")
+# Preserve operator edits to the config across `rpm -U`.
+set(CPACK_RPM_USER_FILELIST
+    "%config(noreplace) /etc/sentineld/sentinel.json"
+    "%attr(644,root,root) /usr/lib/systemd/system/sentineld.service"
+)
+
+# Creates the unprivileged service account and runs `systemctl daemon-reload`,
+# without which a freshly installed unit is invisible to systemd.
+set(CPACK_RPM_PACKAGE_REQUIRES "systemd, shadow-utils")
+set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/scripts/postinst")
 
 include(CPack)

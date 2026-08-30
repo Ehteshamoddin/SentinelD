@@ -1,7 +1,7 @@
 {
   "daemon": {
-    "pid_file": "/var/run/sentineld.pid",
-    "log_file": "/var/log/sentineld.log",
+    "pid_file": "/run/sentineld/sentineld.pid",
+    "log_file": "/var/log/sentineld/sentineld.log",
     "log_level": "info"
   },
   "monitor": {
@@ -10,7 +10,7 @@
     "memory_threshold_percent": 85
   },
   "watcher": {
-    "path": "/tmp/sentinel_watch",
-    "events": ["create", "modify", "delete"]
+    "path": "/etc/sentineld",
+    "events": ["create", "modify", "delete", "move"]
   }
 }
