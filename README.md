@@ -9,7 +9,7 @@
 - **Resource Monitoring**: Tracks CPU and Memory usage via `/proc`, alerting on high load.
 - **File Integrity Monitoring**: Watches critical directories for file creation, modification, and deletion events.
 - **Structured Logging**: Uses `spdlog` for high-performance logging.
-- **Configuration**: YAML-based configuration with hot-reload support.
+- **Configuration**: JSON configuration with SIGHUP hot-reload.
 
 ## Build & Packaging
 
@@ -53,8 +53,8 @@ Configuration is located at `/etc/sentineld/sentinel.json` (default).
 ```json
 {
   "daemon": {
-    "pid_file": "/var/run/sentineld.pid",
-    "log_file": "/var/log/sentineld.log",
+    "pid_file": "/run/sentineld/sentineld.pid",
+    "log_file": "/var/log/sentineld/sentineld.log",
     "log_level": "info"
   },
   "monitor": {
@@ -63,8 +63,26 @@ Configuration is located at `/etc/sentineld/sentinel.json` (default).
     "memory_threshold_percent": 85
   },
   "watcher": {
-    "path": "/tmp/sentinel_watch",
-    "events": ["create", "modify", "delete"]
+    "path": "/etc/sentineld",
+    "events": ["create", "modify", "delete", "move"]
   }
 }
 ```
+
+Supported `watcher.events`: `create`, `delete`, `modify`, `close_write`, `move`, `attrib`.
+
+Reload without restarting:
+
+```bash
+sudo systemctl reload sentineld
+```
+
+Note that `log_file` is only read at startup; changing it requires a restart.
+
+## Known limitations
+
+- The watch is not recursive; subdirectories of `watcher.path` are not monitored.
+- This is change *detection*, not file *integrity* monitoring: no baseline hashes are kept.
+- `/proc` sampling reports host-wide figures and is not cgroup-aware, so numbers are wrong inside a container.
+- There are no automated tests yet.
+

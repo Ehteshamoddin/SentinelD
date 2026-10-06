@@ -1,0 +1,9 @@
+#!/bin/sh
+# Create the unprivileged service account the unit runs as.
+getent group sentineld >/dev/null || groupadd --system sentineld
+getent passwd sentineld >/dev/null || \
+    useradd --system --gid sentineld --no-create-home \
+            --home-dir /var/lib/sentineld --shell /sbin/nologin sentineld
+
+systemctl daemon-reload >/dev/null 2>&1 || :
+exit 0
